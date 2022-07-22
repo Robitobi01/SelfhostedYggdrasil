@@ -33,8 +33,6 @@
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
         $profile = curl_exec($ch);
-        print($url . 'hasJoined?username=' . $username . '&serverId=' . $server_hash);
-        print(curl_getinfo($ch, CURLINFO_HTTP_CODE));
         echo $profile;
         http_response_code(curl_getinfo($ch, CURLINFO_HTTP_CODE));
         curl_close($ch);

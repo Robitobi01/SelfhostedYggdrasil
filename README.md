@@ -24,7 +24,20 @@ Client setup:
 
 The authString serves as a new client authentication property to continue using servers in online mode without allowing everyone to join. The string should be kept a secret to prevent other people impersonating on other accounts.
 
+### How does it work?
 
+Usually the client sends the following JSON to `https://sessionserver.mojang.com/session/minecraft/join`
 
+`{
+    "accessToken": "<accessToken>",
+    "selectedProfile": "<player's uuid without dashes>",
+    "serverId": "<serverHash>"
+    "authString": "<new shared secret string>"
+}`
 
+We add the new parameter authString with a shared secret string for authentication. If the server receives this, it sets the session entry in sessions.json to be valid for 60s for the given serverId hash.
+
+When the server then sends his request to `https://sessionserver.mojang.com/session/minecraft/hasJoined?username=username&serverId=hash` php checks if there's a valid session entry less than 60s old. If the client performed a request previously your allowed to join and the server gets the usual response data from the `https://sessionserver.mojang.com/session/minecraft/profile/<uuid>` endpoint.
+
+If the new parameter isn't available php requests original sessions from Mojang to be compatible with a mixed client group.
 
