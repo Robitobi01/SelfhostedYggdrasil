@@ -29,6 +29,25 @@ dependencies {
     }
 }
 
+if (mixinConfigs) {
+    def mixinMappings = layout.buildDirectory.file('mixin-mappings.tsrg')
+
+    tasks.named('compileJava', JavaCompile) {
+        options.compilerArgs.add("-AoutTsrgFile=${mixinMappings.get().asFile}")
+        outputs.file(mixinMappings)
+    }
+
+    def mergedMappings = renamer.merge('mergeReobfMappings') {
+        dependsOn tasks.named('compileJava')
+        map(tasks.named('extractUserdevMcpToSrg'))
+        map(files(mixinMappings))
+    }
+
+    tasks.named('reobfJar') {
+        map.setFrom(mergedMappings)
+    }
+}
+
 cleanroom {
     runs {
         client {
