@@ -1,0 +1,148 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact: ${{ steps.meta.outputs.artifact }}
+      mod_id: ${{ steps.meta.outputs.id }}
+      mod_name: ${{ steps.meta.outputs.name }}
+      mod_version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read mod metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          read_property() {
+            sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" gradle.properties |
+              tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
+          id=$(read_property mod_id)
+          name=$(read_property mod_name)
+          version=$(read_property mod_version)
+          if [ -z "$id" ] || [ -z "$version" ]; then
+            echo "::error::gradle.properties must set mod_id and mod_version"
+            exit 1
+          fi
+          if ! [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] ||
+             ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*([-+._][0-9A-Za-z0-9]+([._+-][0-9A-Za-z0-9]+)*)?$ ]]; then
+            echo "::error::mod_id or mod_version contains unsupported characters"
+            exit 1
+          fi
+          {
+            echo "id=$id"
+            echo "name=${name:-$id}"
+            echo "version=$version"
+            echo "artifact=$id-$version-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon
+      - name: Upload installable jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: build/libs/${{ steps.meta.outputs.id }}-${{ steps.meta.outputs.version }}.jar
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: release
+      - name: Create release for a new version
+        env:
+          BEFORE: ${{ github.event.before }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          MOD_ID: ${{ needs.build.outputs.mod_id }}
+          MOD_NAME: ${{ needs.build.outputs.mod_name }}
+          MOD_VERSION: ${{ needs.build.outputs.mod_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          read_property() {
+            sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" |
+              tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          }
+          if [ "$BEFORE" != "$zero" ]; then
+            if ! [[ "$BEFORE" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::warning::Invalid previous commit; skipping release."
+              exit 0
+            fi
+            if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              if ! git fetch --no-tags --depth=1 origin "$BEFORE" 2>/dev/null &&
+                 ! git fetch --no-tags origin "$BEFORE" 2>/dev/null; then
+                echo "::warning::Cannot fetch previous commit $BEFORE; skipping release."
+                exit 0
+              fi
+            fi
+            if ! git cat-file -e "${BEFORE}:gradle.properties" 2>/dev/null; then
+              echo "::warning::Previous commit has no gradle.properties; skipping release."
+              exit 0
+            fi
+            previous=$(git show "${BEFORE}:gradle.properties" | read_property mod_version)
+            if ! [[ "$previous" =~ ^[0-9]+(\.[0-9]+)*([-+._][0-9A-Za-z0-9]+([._+-][0-9A-Za-z0-9]+)*)?$ ]]; then
+              echo "::warning::Previous mod_version is missing or invalid; skipping release."
+              exit 0
+            fi
+            if [ "$previous" = "$MOD_VERSION" ]; then
+              echo "mod_version is unchanged; skipping release."
+              exit 0
+            fi
+            if [ "$(printf '%s\n%s\n' "$previous" "$MOD_VERSION" | sort -V | tail -n 1)" != "$MOD_VERSION" ]; then
+              echo "mod_version did not increase ($previous -> $MOD_VERSION); skipping release."
+              exit 0
+            fi
+          fi
+          tag="v$MOD_VERSION"
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Tag $tag already exists; skipping release."
+            exit 0
+          elif [ "$status" -ne 2 ]; then
+            echo "::error::Unable to check whether tag $tag exists."
+            exit 1
+          fi
+          gh release create "$tag" "release/$MOD_ID-$MOD_VERSION.jar" \
+            --target "$GITHUB_SHA" \
+            --title "${MOD_NAME:-$MOD_ID} $MOD_VERSION" \
+            --generate-notes
