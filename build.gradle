@@ -1,0 +1,139 @@
+import groovy.json.JsonOutput
+
+plugins {
+    id 'java'
+    id 'idea'
+    id 'com.cleanroommc.cleanroomgradle'
+}
+
+def modProperties = [
+        'root_package', 'mod_id', 'mod_name', 'mod_version', 'mod_description',
+        'mod_authors', 'mod_credits', 'mod_url', 'mod_logo_path'
+].collectEntries { name -> [(name): providers.gradleProperty(name).getOrElse('')] }
+def cleanroomVersion = providers.gradleProperty('cleanroom_version').get()
+def accessTransformerNames = providers.gradleProperty('access_transformers').getOrElse('').tokenize()
+def mixinConfigs = providers.gradleProperty('mixin_configs').getOrElse('').tokenize()
+def refmap = providers.gradleProperty('cg.userdev.refmap').getOrElse('')
+
+group = modProperties.root_package
+version = modProperties.mod_version
+base.archivesName = modProperties.mod_id
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+dependencies {
+    implementation cleanroom.userdev(cleanroomVersion) {
+        accessTransformers.from(accessTransformerNames.collect { "src/main/resources/META-INF/$it" })
+    }
+}
+
+cleanroom {
+    runs {
+        client {
+            configure {
+                username = providers.gradleProperty('minecraft_username').get()
+                // CleanroomGradle enables exports by default.
+                jvmArgs '-Dmixin.debug.export=false', '-Dmixin.debug.export.decompile=false',
+                        '-Dmixin.checks.interfaces=false'
+                // Development classes have no manifest.
+                args mixinConfigs.collectMany { ['--mixin', it] }
+                jvmArgs providers.gradleProperty('extra_jvm_args').getOrElse('').tokenize()
+            }
+        }
+        server {
+            configure {
+                args mixinConfigs.collectMany { ['--mixin', it] }
+                jvmArgs providers.gradleProperty('extra_jvm_args').getOrElse('').tokenize()
+            }
+        }
+    }
+}
+
+def quotedProperties = modProperties.collectEntries { key, value -> [(key): JsonOutput.toJson(value)] }
+def generateTags = tasks.register('generateTags', Sync) {
+    def tokens = quotedProperties + [
+            package_name: "${modProperties.root_package}.${modProperties.mod_id}",
+            cleanroom_version: JsonOutput.toJson(cleanroomVersion)
+    ]
+    inputs.properties(tokens)
+    from('gradle/templates') {
+        expand(tokens)
+        into("${modProperties.root_package.replace('.', '/')}/${modProperties.mod_id}")
+    }
+    into(layout.buildDirectory.dir('generated/sources/tags/main'))
+}
+sourceSets.main.java.srcDir(generateTags)
+
+processResources {
+    def tokens = quotedProperties + [
+            mod_authors_json: JsonOutput.toJson(modProperties.mod_authors.tokenize(',')*.trim()),
+            mixin_package: JsonOutput.toJson(providers.gradleProperty('mixin_package')
+                    .getOrElse("${modProperties.root_package}.${modProperties.mod_id}.mixin")),
+            mixin_refmap: JsonOutput.toJson(refmap)
+    ]
+    inputs.properties(tokens)
+    filesMatching(['mcmod.info', 'pack.mcmeta'] + mixinConfigs) {
+        expand(tokens)
+    }
+}
+
+jar {
+    manifest {
+        if (mixinConfigs) {
+            attributes 'MixinConfigs': mixinConfigs.join(',')
+        }
+        if (accessTransformerNames) {
+            attributes 'FMLAT': accessTransformerNames.join(' ')
+        }
+        def coremod = providers.gradleProperty('coremod_plugin_class').getOrElse('')
+        if (coremod) {
+            attributes 'FMLCorePlugin': coremod
+            if (providers.gradleProperty('coremod_includes_mod').getOrElse('true').toBoolean()) {
+                attributes 'FMLCorePluginContainsFMLMod': true, 'ForceLoadAsMod': true
+            }
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+// Required by Foundation in userdev.
+tasks.withType(JavaExec).configureEach {
+    systemProperty 'foundation.loadsall', 'true'
+}
+
+if (file('/etc/NIXOS').exists()) {
+    def nativeLibraryPath = providers.exec {
+        workingDir layout.projectDirectory
+        commandLine 'nix', 'develop', '--command', 'printenv', 'LD_LIBRARY_PATH'
+    }.standardOutput.asText.map { it.trim() }
+    tasks.withType(com.cleanroommc.gradle.api.task.mc.RunMinecraft).configureEach {
+        environment 'LD_LIBRARY_PATH', nativeLibraryPath
+    }
+}
+
+idea.module {
+    downloadSources = true
+    excludeDirs += files('run', '.direnv')
+}
+
+def copyGameSettings = tasks.register('copyGameSettings') {
+    def source = layout.projectDirectory.file('gradle/game/options.txt').asFile
+    def target = layout.projectDirectory.file('run/client/options.txt').asFile
+    inputs.file(source)
+    outputs.file(target)
+    onlyIf { !target.exists() }
+    doLast {
+        target.parentFile.mkdirs()
+        java.nio.file.Files.copy(source.toPath(), target.toPath())
+    }
+}
+
+tasks.matching { it.name == 'runClient' }.configureEach {
+    dependsOn copyGameSettings
+}
