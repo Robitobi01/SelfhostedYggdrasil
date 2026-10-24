@@ -1,10 +1,25 @@
 <?php
-    include('/usr/share/php/Net/DNS2.php');
 //    ini_set('log_errors', TRUE);
 //    ini_set('error_log', 'error.log');
 
-    $resolver = new Net_DNS2_Resolver(array('nameservers' => array('2606:4700:4700::1111')));
-    $mojang_ip = $resolver->query("sessionserver.mojang.com.", 'A')->answer[0]->address;
+    // The system resolver must return Mojang's real public address. dns_get_record()
+    // queries DNS directly and does not consult /etc/hosts.
+    $mojang_ip = null;
+    $records = @dns_get_record('sessionserver.mojang.com.', DNS_A);
+    if (is_array($records)) {
+        foreach ($records as $record) {
+            if (isset($record['type'], $record['ip'])
+                && $record['type'] === 'A'
+                && filter_var($record['ip'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                $mojang_ip = $record['ip'];
+                break;
+            }
+        }
+    }
+    if ($mojang_ip === null) {
+        http_response_code(502);
+        exit;
+    }
     $url = 'https://' . $mojang_ip . '/session/minecraft/';
     $sessions = json_decode(file_get_contents('sessions.json'), true);
 

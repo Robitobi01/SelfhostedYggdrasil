@@ -1,7 +1,60 @@
 # SelfhostedYggdrasil
+
+## Reference client mod (Minecraft 1.12.2 / Cleanroom / Java 25)
+
+This is the reference Minecraft 1.12.2 client implementation for the self-hosted
+Yggdrasil webserver. It targets **Cleanroom 0.7.12-alpha on Java 25**; it is not a
+Java 8 Forge mod. The mod adds `authString` to the JSON body of the
+`/session/minecraft/join` request (the backend reads `$json_data['authString']`)
+and can override the local session identity.
+
+The PHP webserver backend and `nginx.conf` with the files in `webroot` are an example.
+This mod replaces the manual client-side Mixin described in the legacy client
+setup below; the PHP, nginx, and server-side DNS instructions remain the same.
+
+Build and run:
+
+```sh
+nix develop
+./gradlew build
+./gradlew runClient
+```
+
+Install `build/libs/selfhostedyggdrasil-1.0.2.jar` in the client's `mods`
+directory. Configure `config/selfhostedyggdrasil.cfg`:
+
+- `enabled` — enable the mod.
+- `authString` — shared secret for this player; it must match the value for the
+  player's UUID in the server's `webroot/accounts.json`. Keep it secret.
+- `joinURL` — complete join endpoint exposed by the webserver, for example
+  `https://<host>/session/minecraft/join`.
+- `username`, `uuid` — optional fixed session identity; leave empty to keep the
+  existing session.
+
+The server's `hasJoined` request must still reach the webserver at
+`sessionserver.mojang.com` through the nginx/DNS setup below. If `joinURL` uses
+the self-signed certificate from that setup, trust the certificate in the client
+JVM.
+
+## Webserver setup (PHP backend)
+
 #### This is a basic example how to self-host a Minecraft session server instance. Based on a minimal invasive approach still supporting a fully unmodified vanilla server jar. Also mixed official and invalid sessions are supported.
 
 This approach is based on bending the DNS record sessionserver.mojang.com on the localhost via hosts file. Valid migrated Mojang accounts can still join, because requests without the new additional authString= GET parameter are forwarded to the actual Mojang session service. 
+
+> **PHP requirements:** The provided `webroot/join.php` and
+> `webroot/hasJoined.php` use PHP's built-in
+> `dns_get_record('sessionserver.mojang.com.', DNS_A)` to look up Mojang's
+> session server, and cURL for the HTTP requests. Install the PHP cURL extension
+> (Debian/Ubuntu: `php-curl`); the PEAR `Net_DNS2` package (`php-net-dns2`) is no
+> longer required.
+>
+> `dns_get_record()` uses the system-configured DNS resolver and does not read
+> `/etc/hosts`. That resolver must return Mojang's real public
+> `sessionserver.mojang.com` address. If split-horizon or local DNS maps that
+> name to this self-hosted backend instead, the PHP proxy requests will fail.
+> The `/etc/hosts` entry below is still required for the Minecraft server's Java
+> process; it does not affect the PHP lookup.
 
 Basic server setup manual:
 
