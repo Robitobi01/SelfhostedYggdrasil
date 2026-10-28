@@ -19,12 +19,14 @@ public class SelfhostedYggdrasil {
     @Mod.EventHandler
     public void preInit(final FMLPreInitializationEvent event) {
         MinecraftForge.EVENT_BUS.register(this);
+        ConfigCleanup.prune(Tags.MOD_ID);
     }
 
     @SubscribeEvent
     public void onConfigChangedEvent(final ConfigChangedEvent.OnConfigChangedEvent event) {
         if (event.getModID().equals(Tags.MOD_ID)) {
             ConfigManager.sync(Tags.MOD_ID, Config.Type.INSTANCE);
+            ConfigCleanup.prune(Tags.MOD_ID);
         }
     }
 }
