@@ -38,7 +38,7 @@ public abstract class MixinYggdrasilMinecraftSessionService {
     private void selfhostedyggdrasil$joinServer(final GameProfile profile, final String authenticationToken,
                                                 final String serverId, final CallbackInfo ci)
             throws AuthenticationException {
-        if (!Configuration.enabled) {
+        if (!Configuration.auth.enabled) {
             return;
         }
 
@@ -46,8 +46,8 @@ public abstract class MixinYggdrasilMinecraftSessionService {
         request.accessToken = authenticationToken;
         request.selectedProfile = profile.getId();
         request.serverId = serverId;
-        request.authString = Configuration.authString;
-        makeRequest(HttpAuthenticationService.constantURL(Configuration.joinURL), request);
+        request.authString = Configuration.auth.sharedSecret;
+        makeRequest(HttpAuthenticationService.constantURL(Configuration.auth.joinUrl), request);
         ci.cancel();
     }
 

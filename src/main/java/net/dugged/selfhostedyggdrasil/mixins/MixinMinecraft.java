@@ -12,10 +12,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MixinMinecraft {
     @Inject(method = "getSession", at = @At("HEAD"), cancellable = true)
     private void selfhostedyggdrasil$updateSession(final CallbackInfoReturnable<Session> cir) {
-        if (!Configuration.enabled || Configuration.username.isEmpty() || Configuration.uuid.isEmpty()) {
+        if (!Configuration.auth.enabled || Configuration.session.username.isEmpty()
+                || Configuration.session.uuid.isEmpty()) {
             return;
         }
 
-        cir.setReturnValue(new Session(Configuration.username, Configuration.uuid, Configuration.uuid, "mojang"));
+        cir.setReturnValue(new Session(Configuration.session.username, Configuration.session.uuid,
+                Configuration.session.uuid, "mojang"));
     }
 }

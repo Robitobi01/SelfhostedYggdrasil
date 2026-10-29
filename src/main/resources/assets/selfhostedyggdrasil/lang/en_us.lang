@@ -1,0 +1,7 @@
+selfhostedyggdrasil.auth=Authentication
+selfhostedyggdrasil.auth.enabled=Enable self-hosted auth
+selfhostedyggdrasil.auth.sharedsecret=Shared secret
+selfhostedyggdrasil.auth.joinurl=Join URL
+selfhostedyggdrasil.session=Session
+selfhostedyggdrasil.session.username=Username
+selfhostedyggdrasil.session.uuid=UUID
