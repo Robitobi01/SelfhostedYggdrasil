@@ -1,7 +1,12 @@
 selfhostedyggdrasil.auth=Authentication
 selfhostedyggdrasil.auth.enabled=Enable self-hosted auth
+selfhostedyggdrasil.auth.enabled.tooltip=Route authentication through the self-hosted session server.
 selfhostedyggdrasil.auth.sharedsecret=Shared secret
+selfhostedyggdrasil.auth.sharedsecret.tooltip=Shared secret sent as the authString field of the join request.
 selfhostedyggdrasil.auth.joinurl=Join URL
+selfhostedyggdrasil.auth.joinurl.tooltip=Join endpoint of the self-hosted session server.
 selfhostedyggdrasil.session=Session
 selfhostedyggdrasil.session.username=Username
+selfhostedyggdrasil.session.username.tooltip=Player name used for the local session when self-hosted auth is enabled; leave empty to keep the normal session.
 selfhostedyggdrasil.session.uuid=UUID
+selfhostedyggdrasil.session.uuid.tooltip=Player UUID used as the local session UUID and access token; leave empty to keep the normal session.

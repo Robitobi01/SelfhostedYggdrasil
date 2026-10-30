@@ -21,10 +21,10 @@ public final class Configuration {
 
     public static final class Session {
         @Config.RequiresMcRestart
-        @Config.Comment("Player name used for the local session.")
+        @Config.Comment("Player name used for the local session when self-hosted auth is enabled; leave empty to keep the normal session.")
         public String username = "";
         @Config.RequiresMcRestart
-        @Config.Comment("Player UUID used for the local session.")
+        @Config.Comment("Player UUID used as the local session UUID and access token; leave empty to keep the normal session.")
         public String uuid = "";
     }
 }
